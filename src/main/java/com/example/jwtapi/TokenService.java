@@ -2,24 +2,41 @@ package com.example.jwtapi;
 
 import com.nimbusds.jose.*;
 import com.nimbusds.jose.crypto.*;
+import com.nimbusds.jose.jwk.OctetSequenceKey;
 import com.nimbusds.jose.jwk.RSAKey;
-import com.nimbusds.jwt.*;
-import javax.crypto.spec.SecretKeySpec;
+
 import java.util.*;
+import java.util.UUID; // Added for JTI claim
+import java.util.Date; // Added for expiration claim
+import java.util.concurrent.TimeUnit; // Added for expiration claim
 
 public class TokenService {
 
-    public static String genToken(String pubSignKey, String privSignKey, String encryptKeyName, Properties envProps) throws Exception {
-        String encryptKey = envProps.getProperty(encryptKeyName);
+    static final String ENV = "DEVInt2";
+
+    public static String genToken(Properties envProps) throws Exception {
 
         Map<String, Object> claims = new HashMap<>();
+        // Add the JWT ID (jti) claim with a new UUID
+        claims.put("jti", UUID.randomUUID().toString());
         claims.put("iss", envProps.getProperty("apic.issuer"));
-        claims.put("sub", "CLIENT_ID");
-        claims.put("aud", "OPERATION_PATH");
-        claims.put("lch-provider-org", "PROVIDER_ORG");
-        claims.put("lch-catalog", "CATALOG");
-        claims.put("lch-client-app", "APP");
-        claims.put("lch-client-org", "CONSUMER_ORG");
+        claims.put("sub", "6554e38eeecb6aa01ee37d97709f8c2d");
+        claims.put("aud", "/hello");
+
+        // Add the Expiration (exp) claim based on a 3600-second validity period
+        long validityPeriodSeconds = 3600; // 1 hour
+        Date now = new Date();
+        Date expirationTime = new Date(now.getTime() + TimeUnit.SECONDS.toMillis(validityPeriodSeconds));
+        // JWT 'exp' claim is a NumericDate, representing seconds since Unix epoch
+        claims.put("exp", expirationTime.getTime() / 1000L);
+
+        Map<String, Object> claimsPrv = new HashMap<>();
+        claimsPrv.put("lch-provider-org", "lcd");
+        claimsPrv.put("lch-catalog", "devint");
+        claimsPrv.put("lch-client-app", "devint-test-app");
+        claimsPrv.put("lch-client-org", "devint-test-consumer-org");
+        claims.put("private", claimsPrv);
+        System.out.println("claims : " + claims);
 
         // Create signed JWT
         Payload payloadToSign = new Payload(claims);
@@ -27,26 +44,22 @@ public class TokenService {
         JWSObject signedJWT = new JWSObject(jwsHeader, payloadToSign);
 
         // Use private key from JWTUtil
-        RSAKey rsaKey = JWTUtil.getFullSignJWK();
+        //RSAKey rsaKey = JWTUtil.getFullSignJWK();
+        RSAKey rsaKey = JWTUtil.getJWKFromProperties(ENV);
         signedJWT.sign(new RSASSASigner(rsaKey.toRSAPrivateKey()));
 
-        // Create encrypted JWT with a supported algorithm
-        // We'll use A128KW (AES Key Wrap) with A128CBC-HS256 for content encryption
-        // A128KW requires a 16-byte key
-        JWEHeader jweHeader = new JWEHeader(JWEAlgorithm.A128KW, EncryptionMethod.A128CBC_HS256);
+        // Create encrypted JWT with DIR algorithm
+        JWEHeader jweHeader = new JWEHeader(JWEAlgorithm.DIR, EncryptionMethod.A128CBC_HS256);
         Payload payloadToEncrypt = new Payload(signedJWT);
         JWEObject encryptedJWT = new JWEObject(jweHeader, payloadToEncrypt);
 
-        // The key for A128KW must be 16 bytes (128 bits)
-        // If your key is shorter, you'll need to pad it.
-        byte[] keyBytes = encryptKey.getBytes("UTF-8");
-        if (keyBytes.length != 16) {
-            throw new IllegalArgumentException("Encryption key must be exactly 16 bytes long for A128KW");
-        }
-        SecretKeySpec secretKey = new SecretKeySpec(keyBytes, "AES");
+        // Parse the JWK and extract the raw key bytes
+        String jwkJson = "{\"kty\":\"oct\",\"alg\":\"A128CBC-HS256\",\"k\":\"6EuSddvluDsKD_cqMoKZkjcr5gRzf0M0593Vu_YAyIE\"}";
+        OctetSequenceKey jwk = OctetSequenceKey.parse(jwkJson);
+        byte[] jwkBytes = jwk.toByteArray();
 
-        // Use AESEncrypter with the correct key
-        AESEncrypter encrypter = new AESEncrypter(secretKey);
+        // Encrypt using DirectEncrypter with the raw key bytes
+        DirectEncrypter encrypter = new DirectEncrypter(jwkBytes);
         encryptedJWT.encrypt(encrypter);
 
         return encryptedJWT.serialize();
