@@ -23,14 +23,15 @@ public class JWTUtil {
             }
             String line;
             while ((line = reader.readLine()) != null) {
+                // Check if the line matches the pattern {domain}|{env}|jwk-s-s|{JWK}
                 String[] parts = line.split("\\|", 4);
-                if (parts.length == 4 && parts[1].equalsIgnoreCase(env)) {
+                if (parts.length == 4 && parts[1].equalsIgnoreCase(env) && "jwk-s-s".equalsIgnoreCase(parts[2])) {
                     jwkJson = parts[3].trim();
                     break;
                 }
             }
         }
-        System.out.println("Extracted JWK JSON: " + jwkJson);
+
         if (jwkJson == null) {
             throw new IllegalArgumentException("JWK JSON not found in properties file for environment: " + env);
         }
