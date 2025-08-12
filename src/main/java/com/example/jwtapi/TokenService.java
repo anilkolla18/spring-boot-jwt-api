@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit; // Added for expiration claim
 
 public class TokenService {
 
-    static final String ENV = "DEVInt2";
+    static final String ENV = "DEVInt";
 
     public static String genToken(Properties envProps) throws Exception {
 
@@ -43,9 +43,8 @@ public class TokenService {
         JWSHeader jwsHeader = new JWSHeader(JWSAlgorithm.RS256);
         JWSObject signedJWT = new JWSObject(jwsHeader, payloadToSign);
 
-        // Use private key from JWTUtil
-        //RSAKey rsaKey = JWTUtil.getFullSignJWK();
-        RSAKey rsaKey = JWTUtil.getJWKFromProperties(ENV);
+        // Use private key from JWTUtil for signing
+        RSAKey rsaKey = (RSAKey) JWTUtil.getJWKFromProperties(ENV, "jwk-s-s");
         signedJWT.sign(new RSASSASigner(rsaKey.toRSAPrivateKey()));
 
         // Create encrypted JWT with DIR algorithm
@@ -53,9 +52,8 @@ public class TokenService {
         Payload payloadToEncrypt = new Payload(signedJWT);
         JWEObject encryptedJWT = new JWEObject(jweHeader, payloadToEncrypt);
 
-        // Parse the JWK and extract the raw key bytes
-        String jwkJson = "{\"kty\":\"oct\",\"alg\":\"A128CBC-HS256\",\"k\":\"6EuSddvluDsKD_cqMoKZkjcr5gRzf0M0593Vu_YAyIE\"}";
-        OctetSequenceKey jwk = OctetSequenceKey.parse(jwkJson);
+        // Use key from JWTUtil for encryption
+        OctetSequenceKey jwk = (OctetSequenceKey) JWTUtil.getJWKFromProperties(ENV, "jwk-s-e");
         byte[] jwkBytes = jwk.toByteArray();
 
         // Encrypt using DirectEncrypter with the raw key bytes
